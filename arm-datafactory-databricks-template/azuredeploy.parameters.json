@@ -6,7 +6,7 @@
             "value": "Australia East"
         },
         "storageAccountName": {
-            "value": "arm-deploy-storage"
+            "value": "armdeploystorage"
         },
         "storageAccountOption": {
             "value": "new"
@@ -22,6 +22,6 @@
         },
         "keyVaultName": {
             "value": "arm-deploy-kv"
-        }
+        },
     }
 }

@@ -40,7 +40,6 @@
         },
         "workspaceName":{
             "type": "string",
-            "defaultValue": "",
             "metadata": {
                 "description": "Azure databricks workspace needed for data factory"
             }
@@ -56,13 +55,6 @@
                 "description": "Pricing Tier of the databricks workspace"
             }
         },
-        "disablePublicIp": {
-            "type": "bool",
-            "defaultValue": false,
-            "metadata": {
-                "description": "Specifies whether to deploy Azure Databricks workspace with Secure Cluster Connectivity (No Public IP) enabled or not"
-            }
-        },
         "keyVaultName": {
             "type": "string",
             "metadata": {
@@ -76,12 +68,13 @@
         "managedResourceGroupName": "[concat('databricks-rg-', parameters('workspaceName'), '-', uniqueString(parameters('workspaceName'), resourceGroup().id))]",
         "managedResourceGroupId": "[concat(subscription().id, '/resourceGroups/', variables('managedResourceGroupName'))]",
         "storageLinkedserviceName": "[concat(parameters('dataFactoryName'), '_ls_storage_account')]",
-        "keyvaultLinkedserviceName": "[concat(parameters('dataFactoryName'), '_ls_key_vault')]"        
+        "keyvaultLinkedserviceName": "[concat(parameters('dataFactoryName'), '_ls_key_vault')]",
+        "storageaccountuniqueName": "[concat(parameters('storageAccountName'), substring(uniqueString(resourceGroup().id),0,4))]"
     },
     "resources": [
         {
             "condition": "[equals(parameters('storageAccountOption'), 'new')]",
-            "name": "[parameters('storageAccountName')]",
+            "name": "[variables('storageaccountuniqueName')]",
             "type": "Microsoft.Storage/storageAccounts",
             "apiVersion": "2019-06-01",
             "tags": "[parameters('tagValues')]",
@@ -122,21 +115,20 @@
                     "name": "standard",
                     "family": "A"
                 }
-            },
-            "resources": [
-                {
-                    "type": "secrets",
-                    "name": "storage_account_conn_string",
-                    "apiVersion": "2016-10-01",
-                    "dependsOn": [
-                        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
-                        "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
-                    ],
-                    "properties": {
-                        "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('storageAccountName'), ';AccountKey=', listKeys(parameters('storageAccountName'), '2019-04-01').keys[0].value,';EndpointSuffix=core.windows.net')]"  
-                    }
-                }
-            ]
+            }            
+        },
+        {
+            "name": "[concat(parameters('keyVaultName'), '/storage_account_conn_string')]",
+            "type": "Microsoft.KeyVault/vaults/secrets",
+            "apiVersion": "2019-09-01",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('storageaccountuniqueName'))]",
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+            ],
+            "properties": {
+                "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageaccountuniqueName'), ';AccountKey=', listKeys(variables('storageaccountuniqueName'), '2019-04-01').keys[0].value,';EndpointSuffix=core.windows.net')]"  
+            }
         },
         {
             "name": "[parameters('datafactoryname')]",
@@ -154,7 +146,7 @@
                     "apiVersion": "2018-06-01",                    
                     "name": "[variables('storageLinkedserviceName')]",
                     "dependsOn": [
-                        "[parameters('dataFactoryName')]"
+                        "[variables('storageaccountuniqueName')]"
                     ],
                     "properties": {
                         "description": "Linked service to storage account for the Data Factory to retrieve or store data",
@@ -170,6 +162,21 @@
 					        }
                         }
                     }                    
+                },
+                {
+                    "type": "linkedservices",
+                    "apiVersion": "2018-06-01",
+                    "name": "[variables('keyvaultLinkedserviceName')]",
+                    "dependsOn": [
+                        "[parameters('keyVaultName')]"
+                    ],
+                    "properties": {
+                        "description": "Linked service of Azure Key vault for the Data Factory",
+                        "type": "AzureKeyVault",
+                        "typeProperties": {
+                            "baseUrl": "[concat('https://',parameters('keyVaultName'),'.vault.azure.net/')]"
+                        }
+                    } 
                 }
             ]                        
         },
@@ -183,11 +190,7 @@
             },
             "properties": {
                 "managedResourceGroupId": "[variables('managedResourceGroupId')]",
-                "parameters": {
-                "enableNoPublicIp": {
-                    "value": "[parameters('disablePublicIp')]"
-                }
-                }
+                "parameters": { }
             }
         }
     ],
