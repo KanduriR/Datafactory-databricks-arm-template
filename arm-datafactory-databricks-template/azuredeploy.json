@@ -60,6 +60,19 @@
             "metadata": {
                 "description": "Key vault for maintaing storage account connection string details as secret"
             }
+        },
+        "kv_owner_id": {
+            "type": "string",
+            "metadata": {
+                "description": "Service princiapl ID which performs the deployment"
+            }
+        },
+        "env": {
+            "type": "string",
+            "defaultValue": "dev",
+            "metadata": {
+                "description": "Envrionmnet where this is deployed"
+            }
         }
     },
     "functions": [],
@@ -69,7 +82,13 @@
         "managedResourceGroupId": "[concat(subscription().id, '/resourceGroups/', variables('managedResourceGroupName'))]",
         "storageLinkedserviceName": "[concat(parameters('dataFactoryName'), '_ls_storage_account')]",
         "keyvaultLinkedserviceName": "[concat(parameters('dataFactoryName'), '_ls_key_vault')]",
-        "storageaccountuniqueName": "[concat(parameters('storageAccountName'), substring(uniqueString(resourceGroup().id),0,4))]"
+        "storageaccountuniqueName": "[concat(parameters('storageAccountName'), substring(uniqueString(resourceGroup().id),0,4),parameters('env'))]",
+        "adfname": "[concat(parameters('dataFactoryName'),'-',parameters('env'))]",
+        "databricksname": "[concat(parameters('workspaceName'),'-',parameters('env'))]",    
+        "kvname": "[concat(parameters('keyVaultName'),'-',parameters('env'))]",
+        "kv-stg-secretname": "storage_account_conn_string",
+        "factoryId": "[concat('Microsoft.DataFactory/factories/', variables('adfname'))]"
+
     },
     "resources": [
         {
@@ -86,7 +105,7 @@
             }            
         },
         {
-            "name": "[parameters('keyVaultName')]",
+            "name": "[variables('kvname')]",
             "type": "Microsoft.KeyVault/vaults",
             "apiVersion": "2019-09-01",
             "location": "[resourceGroup().location]",
@@ -99,17 +118,24 @@
                 "accessPolicies": [
                     {
                         "tenantId": "[variables('tenantId')]",
+                        "objectId": "[parameters('kv_owner_id')]",
+                        "permissions": {
+                            "secrets": [
+                                "all"
+                            ]
+                        }  
+                    },
+                    {
+                        "tenantId": "[variables('tenantId')]",
                         "objectId": "[reference(resourceId('Microsoft.DataFactory/factories', parameters('dataFactoryName')), '2018-06-01', 'full').identity.principalId]",
                         "permissions": {
-                            "keys": [
-                                "Get"    
-                            ],
+                            "keys": [],
                             "secrets": [
-                                "List",
-                                "Get"                                
+                                "list",
+                                "get"                                
                             ]
                         }
-                    }
+                    }                    
                 ],
                 "sku": {
                     "name": "standard",
@@ -118,20 +144,20 @@
             }            
         },
         {
-            "name": "[concat(parameters('keyVaultName'), '/storage_account_conn_string')]",
+            "name": "[concat(variables('kvname'), '/', variables('kv-stg-secretname'))]",
             "type": "Microsoft.KeyVault/vaults/secrets",
             "apiVersion": "2019-09-01",
             "location": "[resourceGroup().location]",
             "dependsOn": [
                 "[resourceId('Microsoft.Storage/storageAccounts', variables('storageaccountuniqueName'))]",
-                "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+                "[resourceId('Microsoft.KeyVault/vaults', variables('kvname'))]"
             ],
             "properties": {
                 "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageaccountuniqueName'), ';AccountKey=', listKeys(variables('storageaccountuniqueName'), '2019-04-01').keys[0].value,';EndpointSuffix=core.windows.net')]"  
             }
         },
         {
-            "name": "[parameters('datafactoryname')]",
+            "name": "[variables('adfname')]",
             "type": "Microsoft.DataFactory/factories",
             "apiVersion": "2018-06-01",
             "location": "[parameters('location')]",
@@ -146,7 +172,8 @@
                     "apiVersion": "2018-06-01",                    
                     "name": "[variables('storageLinkedserviceName')]",
                     "dependsOn": [
-                        "[variables('storageaccountuniqueName')]"
+                        "[concat(variables('factoryId'), '/linkedServices/', variables('keyvaultLinkedserviceName'))]",
+                        "[variables('adfname')]"
                     ],
                     "properties": {
                         "description": "Linked service to storage account for the Data Factory to retrieve or store data",
@@ -168,13 +195,13 @@
                     "apiVersion": "2018-06-01",
                     "name": "[variables('keyvaultLinkedserviceName')]",
                     "dependsOn": [
-                        "[parameters('keyVaultName')]"
+                        "[variables('adfname')]"
                     ],
                     "properties": {
                         "description": "Linked service of Azure Key vault for the Data Factory",
                         "type": "AzureKeyVault",
                         "typeProperties": {
-                            "baseUrl": "[concat('https://',parameters('keyVaultName'),'.vault.azure.net/')]"
+                            "baseUrl": "[concat('https://',variables('kvname'),'.vault.azure.net/')]"
                         }
                     } 
                 }
@@ -183,7 +210,7 @@
         {
             "type": "Microsoft.Databricks/workspaces",
             "apiVersion": "2018-04-01",
-            "name": "[parameters('workspaceName')]",
+            "name": "[variables('databricksname')]",
             "location": "[parameters('location')]",
             "sku": {
                 "name": "[parameters('pricingTier')]"
@@ -195,13 +222,33 @@
         }
     ],
     "outputs": {
-        "adf-output": {
-            "type": "object",
-            "value": "[reference(resourceId('Microsoft.DataFactory/factories',parameters('datafactoryname')),'2018-06-01','full')]"
+        "adb-name": {
+            "type": "string",
+            "value": "[variables('databricksname')]"
         },
-        "adb-output": {
+        "workspaceURL": {
+            "type": "string",
+            "value": "[reference(resourceId('Microsoft.Databricks/workspaces', variables('databricksname'))).workspaceURL]"
+        },
+        "adf-name": {
             "type": "object",
-            "value": "[reference(resourceId('Microsoft.Databricks/workspaces',parameters('workspaceName')),'2018-04-01','full')]"
-        }
+            "value": "[variables('adfname')]"
+        },
+        "adf-id": {
+            "type": "string",
+            "value": "[reference(resourceId('Microsoft.DataFactory/factories',variables('adfname')),'2018-06-01','full').principalId]"    
+        },
+        "keyvault-name": {
+            "type": "string",
+            "value": "[variables('kvname')]"
+        },
+        "kv-st-secret": {
+            "type": "string",
+            "value": "[variables('kv-stg-secretname')]"
+        },
+        "stg-acct": {
+            "type": "string",
+            "value": "[variables('storageaccountuniqueName')]"
+        } 
     }
 }

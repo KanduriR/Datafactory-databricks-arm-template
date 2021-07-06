@@ -23,5 +23,8 @@
         "keyVaultName": {
             "value": "arm-deploy-kv"
         },
+        "kv_owner_id": {
+            "value": ""  
+        }
     }
 }
