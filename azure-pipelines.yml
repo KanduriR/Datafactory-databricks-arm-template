@@ -14,9 +14,9 @@ steps:
   inputs:
     deploymentScope: 'Resource Group'
     azureResourceManagerConnection: 'SVC-IAC-datafactory'
-    subscriptionId: '4f2408c2-9029-4bdf-9195-a8e961e5c591'
+    subscriptionId: $(Subscription ID)
     action: 'Create Or Update Resource Group'
-    resourceGroupName: 'test-rg01'
+    resourceGroupName: $(resourcegroup)
     location: 'Australia Central'
     templateLocation: 'URL of the file'
     csmFileLink: 'https://raw.githubusercontent.com/KanduriR/Datafactory-databricks-arm-template/blob/master/arm-datafactory-databricks-template/azuredeploy.json'
